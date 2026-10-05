@@ -1,4 +1,4 @@
-name: Build Spacewar NetHunter Kernel + Repack boot.img
+name: Build Spacewar Kernel + Repack boot.img
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -40,6 +40,7 @@ jobs:
           chmod -R +x scripts/
           find . -name "*.sh" -exec chmod +x {} +
 
+          # FIX TRACE HEADERS
           if [ -f kernel/sched/walt/trace.h ]; then
             sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../kernel/sched/walt|g' kernel/sched/walt/trace.h || true
           fi
@@ -58,6 +59,7 @@ jobs:
           sed -i 's/cc-option -Werror=strict-prototypes//g' Makefile || true
           sed -i 's/-Werror=strict-prototypes//g' Makefile || true
 
+          # BUILD PAKAI nos3_nh_defconfig
           make ARCH=arm64 SUBARCH=arm64 nos3_nh_defconfig
           make ARCH=arm64 SUBARCH=arm64 CC=clang olddefconfig
 
@@ -81,7 +83,7 @@ jobs:
 
       - name: Download Magiskboot x86_64
         run: |
-          wget https://github.com/CoderCharmander/magiskboot-binaries/raw/main/linux-x86_64/magiskboot -O magiskboot
+          wget https://github.com/Uevo001/magiskboot-linux/raw/main/magiskboot -O magiskboot
           chmod +x magiskboot
           file magiskboot
           ./magiskboot --help || echo "Test done"
