@@ -1,4 +1,4 @@
-name: Build Spacewar NetHunter Kernel
+name: Build Spacewar Kernel + Repack boot.img
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc flex bison libssl-dev libelf-dev git wget ccache curl python3 cpio lz4 zstd openssl perl
+          sudo apt-get install -y build-essential bc flex bison libssl-dev libelf-dev git wget ccache curl python3 cpio lz4 zstd openssl perl unzip zip
 
       - name: Download Proton Clang Toolchain
         run: |
@@ -32,11 +32,9 @@ jobs:
       - name: Compile Kernel
         working-directory: kernel-source
         run: |
-          # 1. FIX IZIN EKSEKUSI
           chmod -R +x scripts/
           find . -name "*.sh" -exec chmod +x {} +
 
-          # 2. FIX TRACE HEADERS (WALT, HID, QCOM SOC)
           if [ -f kernel/sched/walt/trace.h ]; then
             sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../kernel/sched/walt|g' kernel/sched/walt/trace.h || true
           fi
@@ -52,15 +50,12 @@ jobs:
             fi
           done
 
-          # 3. FIX STRICT-PROTOTYPES
           sed -i 's/cc-option -Werror=strict-prototypes//g' Makefile || true
           sed -i 's/-Werror=strict-prototypes//g' Makefile || true
 
-          # 4. BUILD PAKAI DEFCONFIG NETHUNTER
-          make ARCH=arm64 SUBARCH=arm64 nos3_nh_defconfig
+          make ARCH=arm64 SUBARCH=arm64 nos3_defconfig
           make ARCH=arm64 SUBARCH=arm64 CC=clang olddefconfig
 
-          # 5. BUILD PREPARE
           make ARCH=arm64 SUBARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -69,7 +64,6 @@ jobs:
             LLVM_IAS=0 \
             -j$(nproc) prepare modules_prepare
 
-          # 6. BUILD IMAGE
           make ARCH=arm64 SUBARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -78,7 +72,33 @@ jobs:
             LLVM_IAS=0 \
             -j$(nproc) Image 2>&1 | tee build.log
 
-          ls -la arch/arm64/boot/ || echo "Folder boot tidak ada"
+          ls -la arch/arm64/boot/
+
+      - name: Download Magiskboot
+        run: |
+          wget https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk -O magisk.apk
+          unzip -o magisk.apk -d magisk
+          chmod +x magisk/lib/arm64-v8a/libmagiskboot.so
+          cp magisk/lib/arm64-v8a/libmagiskboot.so magiskboot
+          chmod +x magiskboot
+
+      - name: Download boot.img Ori
+        run: |
+          # GANTI URL INI DENGAN LINK boot.img ORI LU
+          wget "https://github.com/smr646/kernel-nothing-phone-1-custom-config/raw/main/boot.img" -O boot.img || echo "boot.img nggak ada, skip repack"
+
+      - name: Repack boot.img
+        working-directory: kernel-source
+        run: |
+          if [ -f ../boot.img ]; then
+            cd ..
+            ./magiskboot unpack boot.img
+            cp kernel-source/arch/arm64/boot/Image kernel
+            ./magiskboot repack boot.img new-boot.img
+            ls -la new-boot.img
+          else
+            echo "boot.img nggak ada, skip repack"
+          fi
 
       - name: Upload Build Log
         if: always()
@@ -87,20 +107,18 @@ jobs:
           name: Build-Log
           path: kernel-source/build.log
 
-      - name: Pack to AnyKernel3
-        if: success()
-        working-directory: kernel-source
-        run: |
-          git clone --depth=1 \
-            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/osm0sis/AnyKernel3.git \
-            anykernel
-          cp arch/arm64/boot/Image anykernel/ || cp arch/arm64/boot/Image.gz anykernel/
-          cd anykernel
-          zip -r ../kernel-result.zip *
-
-      - name: Upload Kernel Artifact
+      - name: Upload boot.img
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-NetHunter
-          path: kernel-source/kernel-result.zip
+          name: boot.img
+          path: new-boot.img
+          if-no-files-found: warn
+
+      - name: Upload Image
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image
+          path: kernel-source/arch/arm64/boot/Image
+          if-no-files-found: warn
