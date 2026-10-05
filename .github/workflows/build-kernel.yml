@@ -1,0 +1,85 @@
+name: Build Spacewar Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        run: |
+          git clone --depth=1 --branch sm7325/v/mr \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/KoraiLabs/Spacewar-nethunter.git \
+            kernel-source
+          cd kernel-source
+          git submodule update --init --recursive || true
+
+      - name: Setup Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc flex bison libssl-dev libelf-dev git wget ccache curl python3 cpio lz4 zstd openssl perl
+
+      - name: Download Proton Clang Toolchain
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain-clang
+
+      - name: Setup Environment Path
+        run: |
+          echo "$GITHUB_WORKSPACE/toolchain-clang/bin" >> $GITHUB_PATH
+
+      - name: Compile Kernel
+        working-directory: kernel-source
+        run: |
+          chmod -R +x scripts/
+          find . -name "*.sh" -exec chmod +x {} +
+
+          # BUILD PAKAI DEFCONFIG NETHUNTER
+          make ARCH=arm64 SUBARCH=arm64 nos3_nh_defconfig
+          make ARCH=arm64 SUBARCH=arm64 CC=clang olddefconfig
+
+          # BUILD PREPARE
+          make ARCH=arm64 SUBARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 \
+            LLVM_IAS=0 \
+            -j$(nproc) prepare modules_prepare
+
+          # BUILD IMAGE
+          make ARCH=arm64 SUBARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 \
+            LLVM_IAS=0 \
+            -j$(nproc) Image 2>&1 | tee build.log
+
+          ls -la arch/arm64/boot/ || echo "Folder boot tidak ada"
+
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-Log
+          path: kernel-source/build.log
+
+      - name: Pack to AnyKernel3
+        if: success()
+        working-directory: kernel-source
+        run: |
+          git clone --depth=1 \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/osm0sis/AnyKernel3.git \
+            anykernel
+          cp arch/arm64/boot/Image anykernel/ || cp arch/arm64/boot/Image.gz anykernel/
+          cd anykernel
+          zip -r ../kernel-result.zip *
+
+      - name: Upload Kernel Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-NetHunter
+          path: kernel-source/kernel-result.zip
