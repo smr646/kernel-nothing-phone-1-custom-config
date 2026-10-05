@@ -1,4 +1,4 @@
-name: Build Spacewar Kernel
+name: Build Spacewar NetHunter Kernel
 
 on:
   workflow_dispatch:
@@ -32,14 +32,35 @@ jobs:
       - name: Compile Kernel
         working-directory: kernel-source
         run: |
+          # 1. FIX IZIN EKSEKUSI
           chmod -R +x scripts/
           find . -name "*.sh" -exec chmod +x {} +
 
-          # BUILD PAKAI DEFCONFIG NETHUNTER
+          # 2. FIX TRACE HEADERS (WALT, HID, QCOM SOC)
+          if [ -f kernel/sched/walt/trace.h ]; then
+            sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../kernel/sched/walt|g' kernel/sched/walt/trace.h || true
+          fi
+          if [ -f kernel/sched/trace.h ]; then
+            sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../kernel/sched|g' kernel/sched/trace.h || true
+          fi
+          if [ -f drivers/hid/hid-trace.h ]; then
+            sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../drivers/hid|g' drivers/hid/hid-trace.h || true
+          fi
+          for f in drivers/soc/qcom/*trace.h; do
+            if [ -f "$f" ]; then
+              sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../drivers/soc/qcom|g' "$f" || true
+            fi
+          done
+
+          # 3. FIX STRICT-PROTOTYPES
+          sed -i 's/cc-option -Werror=strict-prototypes//g' Makefile || true
+          sed -i 's/-Werror=strict-prototypes//g' Makefile || true
+
+          # 4. BUILD PAKAI DEFCONFIG NETHUNTER
           make ARCH=arm64 SUBARCH=arm64 nos3_nh_defconfig
           make ARCH=arm64 SUBARCH=arm64 CC=clang olddefconfig
 
-          # BUILD PREPARE
+          # 5. BUILD PREPARE
           make ARCH=arm64 SUBARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -48,7 +69,7 @@ jobs:
             LLVM_IAS=0 \
             -j$(nproc) prepare modules_prepare
 
-          # BUILD IMAGE
+          # 6. BUILD IMAGE
           make ARCH=arm64 SUBARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
