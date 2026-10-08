@@ -37,11 +37,17 @@ jobs:
       - name: Compile Kernel Modules
         working-directory: kernel-source
         run: |
-          # FIX IZIN EKSEKUSI
+          # 1. FIX IZIN EKSEKUSI
           chmod -R +x scripts/
           find . -name "*.sh" -exec chmod +x {} +
 
-          # FIX TRACE HEADERS
+          # 2. HAPUS REFERENSI KERNELSU (karena folder nggak ada)
+          sed -i '/kernelsu\/Kconfig/d' drivers/Kconfig || true
+          sed -i '/kernelsu/d' drivers/Makefile || true
+          sed -i '/CONFIG_KSU/d' arch/arm64/configs/spacewar_defconfig || true
+          sed -i '/CONFIG_KSU_/d' arch/arm64/configs/spacewar_defconfig || true
+
+          # 3. FIX TRACE HEADERS
           if [ -f kernel/sched/walt/trace.h ]; then
             sed -i 's|#define TRACE_INCLUDE_PATH .|#define TRACE_INCLUDE_PATH ../../kernel/sched/walt|g' kernel/sched/walt/trace.h || true
           fi
@@ -57,11 +63,11 @@ jobs:
             fi
           done
 
-          # FIX STRICT-PROTOTYPES
+          # 4. FIX STRICT-PROTOTYPES
           sed -i 's/cc-option -Werror=strict-prototypes//g' Makefile || true
           sed -i 's/-Werror=strict-prototypes//g' Makefile || true
 
-          # SET CONFIG JADI MODULE (=m)
+          # 5. SET CONFIG JADI MODULE (=m)
           echo "CONFIG_USB_ACM=m" >> arch/arm64/configs/spacewar_defconfig
           echo "CONFIG_USB_SERIAL=m" >> arch/arm64/configs/spacewar_defconfig
           echo "CONFIG_USB_SERIAL_FTDI_SIO=m" >> arch/arm64/configs/spacewar_defconfig
@@ -76,11 +82,11 @@ jobs:
           echo "CONFIG_MT7601U=m" >> arch/arm64/configs/spacewar_defconfig
           echo "CONFIG_MT76x2U=m" >> arch/arm64/configs/spacewar_defconfig
 
-          # KONFIGURASI
+          # 6. KONFIGURASI
           make ARCH=arm64 SUBARCH=arm64 spacewar_defconfig
           make ARCH=arm64 SUBARCH=arm64 CC=clang olddefconfig
 
-          # BUILD PREPARE
+          # 7. BUILD PREPARE
           make ARCH=arm64 SUBARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -89,7 +95,7 @@ jobs:
             LLVM_IAS=0 \
             -j$(nproc) prepare modules_prepare
 
-          # BUILD MODULES (BUKAN IMAGE)
+          # 8. BUILD MODULES (BUKAN IMAGE)
           make ARCH=arm64 SUBARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
